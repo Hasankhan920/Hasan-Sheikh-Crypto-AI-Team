@@ -1,0 +1,15 @@
+
+name: Build Crypto AI Team APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check ZIP file
+        run: |
+          ls -lah
+          unzip -l Crypto_AI_Team_Android_Source.zip
