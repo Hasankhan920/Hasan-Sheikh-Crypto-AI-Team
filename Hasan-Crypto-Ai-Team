@@ -1,0 +1,132 @@
+import ccxt
+import logging
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
+
+# ================== সেটিংস ==================
+TELEGRAM_TOKEN = "9110584988:AAEmFIy9Gz6Je-jdAExS1T8tKgx_9WWcjkA"
+BINANCE_API_KEY = "7pPdTTi4t6RZ8VbgYmy4R7yF9cFLcUgSg3UFrJ6PSJGFfSiYR3oIpV0pVoLcUnrL"
+BINANCE_SECRET = "q1ebIfA9lze3fiZKCrW53c9Ojd6g8J8n4vnPaGSetSN3ojvwJyW4M9g94Fblz18D"
+ALLOWED_USER_ID = 1903545832
+
+SYMBOLS = ["BTC/USDT", "ETH/USDT"]
+# ============================================
+
+logging.basicConfig(format="%(asctime)s - %(message)s", level=logging.INFO)
+
+exchange = ccxt.binance({
+    "apiKey": BINANCE_API_KEY,
+    "secret": BINANCE_SECRET,
+    "enableRateLimit": True,
+    "options": {"defaultType": "spot"},
+})
+exchange.set_sandbox_mode(True)
+
+def is_allowed(update: Update):
+    return update.effective_user.id == ALLOWED_USER_ID
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_allowed(update):
+        await update.message.reply_text("Unauthorized")
+        return
+    text = (
+        "🚀 *Testnet Trading Bot*\n\n"
+        "/balance - ব্যালেন্স\n"
+        "/price - প্রাইস\n"
+        "/buy BTC 50 - BTC কিনো\n"
+        "/buy ETH 30 - ETH কিনো\n"
+        "/sell BTC all - সব BTC বিক্রি\n"
+        "/status - স্ট্যাটাস"
+    )
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_allowed(update):
+        return
+    try:
+        bal = exchange.fetch_balance()
+        usdt = bal['free'].get('USDT', 0)
+        btc = bal['free'].get('BTC', 0)
+        eth = bal['free'].get('ETH', 0)
+        text = f"💰 *Balance*\n\nUSDT: `{usdt:.2f}`\nBTC: `{btc:.6f}`\nETH: `{eth:.6f}`"
+        await update.message.reply_text(text, parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"Error: {e}")
+
+async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_allowed(update):
+        return
+    try:
+        btc = exchange.fetch_ticker("BTC/USDT")['last']
+        eth = exchange.fetch_ticker("ETH/USDT")['last']
+        text = f"📊 *Price*\n\nBTC: `\( {btc:,.2f}`\nETH: ` \){eth:,.2f}`"
+        await update.message.reply_text(text, parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"Error: {e}")
+
+async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_allowed(update):
+        return
+    try:
+        args = context.args
+        if len(args) < 2:
+            await update.message.reply_text("Usage: /buy BTC 50")
+            return
+        symbol = args[0].upper() + "/USDT"
+        usdt_amount = float(args[1])
+        if symbol not in SYMBOLS:
+            await update.message.reply_text("Only BTC or ETH")
+            return
+        ticker = exchange.fetch_ticker(symbol)
+        price = ticker['last']
+        amount = usdt_amount / price
+        amount = float(exchange.amount_to_precision(symbol, amount))
+        order = exchange.create_market_order(symbol, "buy", amount)
+        await update.message.reply_text(f"✅ Bought {amount:.6f} {symbol} at ${price:,.2f}")
+    except Exception as e:
+        await update.message.reply_text(f"Buy Error: {e}")
+
+async def sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_allowed(update):
+        return
+    try:
+        args = context.args
+        if len(args) < 2:
+            await update.message.reply_text("Usage: /sell BTC all")
+            return
+        coin = args[0].upper()
+        symbol = coin + "/USDT"
+        bal = exchange.fetch_balance()
+        free = bal['free'].get(coin, 0)
+        if args[1].lower() == "all":
+            amount = free
+        else:
+            amount = float(args[1])
+        if amount <= 0 or amount > free:
+            await update.message.reply_text("Not enough balance")
+            return
+        amount = float(exchange.amount_to_precision(symbol, amount))
+        order = exchange.create_market_order(symbol, "sell", amount)
+        price = exchange.fetch_ticker(symbol)['last']
+        await update.message.reply_text(f"✅ Sold {amount:.6f} {symbol} at ${price:,.2f}")
+    except Exception as e:
+        await update.message.reply_text(f"Sell Error: {e}")
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_allowed(update):
+        return
+    await update.message.reply_text("✅ Bot is running on Binance Testnet")
+
+def main():
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("balance", balance))
+    app.add_handler(CommandHandler("price", price))
+    app.add_handler(CommandHandler("buy", buy))
+    app.add_handler(CommandHandler("sell", sell))
+    app.add_handler(CommandHandler("status", status))
+    print("Bot is running...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
